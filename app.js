@@ -28,32 +28,102 @@ const task3 = new Item({ name: "Talk to family" });
 
 const defaultItems = [task1, task2, task3];
 
-Item.insertMany(defaultItems, function (err) {
-  if (err) {
-    console.log(err);
-  } else {
-    console.log("success");
-  }
-});
+const listSchema = {
+  name: String,
+  items: [itemsSchema],
+};
+
+const List = mongoose.model("List", listSchema);
 
 app.get("/", function (req, res) {
-  res.render("list", { listTitle: "Today", newListItems: items });
+  let items = [];
+  Item.find({}, (err, results) => {
+    if (err) {
+      console.log(err);
+      res.status(500).send("Error retrieving items from the database");
+    } else if (results.length === 0) {
+      Item.insertMany(defaultItems, function (err) {
+        if (err) {
+          console.log(err);
+        } else {
+          console.log("success");
+        }
+      });
+    } else {
+      results.forEach((task) => {
+        items.push(task);
+      });
+      res.render("list", { listTitle: "Today", newListItems: items });
+    }
+  });
 });
 
 app.post("/", function (req, res) {
-  const item = req.body.newItem;
+  const itemName = req.body.newItem;
+  const listName = req.body.list;
 
-  if (req.body.list === "Work") {
-    workItems.push(item);
-    res.redirect("/work");
-  } else {
-    items.push(item);
+  const newTask = new Item({ name: itemName });
+
+  if (listName === "Today") {
+    newTask.save();
     res.redirect("/");
+  } else {
+    List.findOne({ name: listName }, (err, foundList) => {
+      foundList.items.push(newTask);
+      foundList.save();
+      res.redirect("/" + listName);
+    });
   }
 });
 
-app.get("/work", function (req, res) {
-  res.render("list", { listTitle: "Work List", newListItems: workItems });
+app.post("/delete", (req, res) => {
+  const oldTask = req.body.checkbox;
+  const listName = req.body.listName;
+
+  if (listName === "Today") {
+    Item.deleteOne({ _id: oldTask }, (err) => {
+      if (err) {
+        console.log(err);
+      } else {
+        console.log("item deleted successfully");
+      }
+    });
+    res.redirect("/");
+  } else {
+    List.findOneAndUpdate(
+      { name: listName },
+      { $pull: { items: { _id: oldTask } } },
+      (err, foundList) => {
+        if (!err) {
+          res.redirect("/" + listName);
+        }
+      }
+    );
+  }
+});
+
+app.get("/:customListName", function (req, res) {
+  const listName = req.params.customListName;
+
+  List.findOne({ name: listName }, (err, foundList) => {
+    if (!err) {
+      if (!foundList) {
+        const list = new List({
+          name: listName,
+          items: defaultItems,
+        });
+        list.save();
+        res.redirect("/" + listName);
+      } else {
+        res.render("list", {
+          listTitle: foundList.name,
+          newListItems: foundList.items,
+        });
+      }
+    } else {
+      console.log(err);
+    }
+  });
 });
 
 app.get("/about", function (req, res) {
